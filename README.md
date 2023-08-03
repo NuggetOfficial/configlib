@@ -31,10 +31,24 @@ These objects can be saved to and read from disk using the YAML standard. This i
 are handed to the `Config` object using a composition strategy. This allows us to use the object as follows.
 ```python
 # write my beautiful config to disk
-cfg.writeto(fpath=<your Path object>)
+cfg.writeto(fpath='your_file')
 
 # read my config from disk
-cfg.readfrom(fpath=<your Path object>)
+cfg = Config.readfrom(fpath='your_file')
 ```
+When no path string is given it the `ConfigIO` object will default to writing to and reading from `config.yaml` in your current working directory as given by the `pathlib` library.
+Alternatively, you may want to do more sophisticated read and write actions. In that case, the `ConfigIO` class can be called directly.
+
+```python
+from configlib import ConfigIO
+
+# write using a direct call from the IO object
+ConfigIO.writeto(cfg, fpath='your_file')
+
+# read in the same manner 
+ConfigIO.readfrom(Config, fpath='your_file')
+```
+This allows you to instantiate more sophisticated `Config` classes that you are free to create :)
+
 
 

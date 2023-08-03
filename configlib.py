@@ -26,7 +26,7 @@ class AliasUnavailableError(Exception):
 class ConfigIO:
 
     @staticmethod
-    def writeto(config:Config, fpath:Path=None) -> None:
+    def __default_checks__(fpath:Path):
 
         # default case
         if fpath is None:
@@ -35,6 +35,15 @@ class ConfigIO:
         # catch edge case where saveas is given as a str
         if not isinstance(fpath, Path):
             fpath=Path(fpath)
+
+        # return modified Path object
+        return fpath
+    
+    @classmethod
+    def writeto(cls, config:Config, fpath:Path=None) -> None:
+
+        # do standard checks
+        fpath = cls.__default_checks__(fpath)
 
         # if yaml file extension not in path -> add
         if not (str(fpath).endswith('.yml') or str(fpath).endswith('.yaml')):
@@ -46,16 +55,11 @@ class ConfigIO:
             # write to disk
             dump(config.tree, fp)
 
-    @staticmethod
-    def readfrom(configType:Config, fpath:Path=None) -> Config:
+    @classmethod
+    def readfrom(cls, configType:Config, fpath:Path=None) -> Config:
 
-        # default case
-        if fpath is None:
-            fpath = DEFAULT_PATH_TO_CONFIG
-        
-        # catch edge case where saveas is given as a str
-        if not isinstance(fpath, Path):
-            fpath=Path(fpath)
+         # do standard checks
+        fpath = cls.__default_checks__(fpath)
 
         # open read only
         with open(fpath,'r') as fp:
@@ -74,6 +78,18 @@ class Config:
         self._tree: dict = tree
         self._banned: list[str] = ['register', 'writeto', 'readfrom', 'tree', 'banned', 'strict']
         self._strict = strict
+
+        # post init
+        self.__post_init__()
+
+    def __post_init__(self):
+
+        # if a tree is set by the user
+        if self._tree != {}:
+
+            # register all the entries
+            [self.register(alias, value) for alias, value in self._tree.items()]
+            
 
     # defined properties #
     @property
@@ -106,7 +122,7 @@ class Config:
         # return alias and value to add
         return alias, value
 
-    # functionality #
+    # core functionality #
     def register(self, alias:str, value:Any, *, overwrite:bool=False, **kwargs:dict) -> None:
         
         # catch banned name:
@@ -151,36 +167,49 @@ class Config:
         # --> Make sure all <self> altering edge cases are caught before this line
         self.__dict__[alias] = value
 
+
+    def __add__(self, other:Config) -> Config:
+
+        # merge trees
+        newtree = vars(self).update(vars(other))
+        print(newtree)
+
+        # Create new Config object
+        cfg = Config(tree=newtree, strict=False)
+
+        # return new cfg
+        return cfg
+    
     
     # IO #
-    def writeto(self, saveas:Path=None) -> None:
+    def writeto(self, fpath:Path=None) -> None:
         # write using IO object
-        ConfigIO.writeto(self, fpath=saveas)
+        ConfigIO.writeto(self, fpath=fpath)
 
     @classmethod
     def readfrom(cls, fpath:Path=None) -> Config:
         # read using IO object
         ConfigIO.readfrom(cls, fpath=fpath)
 
-    # Printable #
-    def __repr__(self):
+    # # Printable #
+    # def __repr__(self):
 
-        # get longest entries, char wise
-        longest_value= max([len(str(path))  for path  in self._tree.values()])
-        longest_key  = max([len(str(alias)) for alias in self._tree.keys()])
+    #     # get longest entries, char wise
+    #     longest_value= max([len(str(path))  for path  in self._tree.values()])
+    #     longest_key  = max([len(str(alias)) for alias in self._tree.keys()])
         
-        # define pre and post amble of repr object
-        preamble = f'\n {type(self)} @ <{hex(id(self))}> \n'
+    #     # define pre and post amble of repr object
+    #     preamble = f'\n {type(self)} @ <{hex(id(self))}> \n'
 
-        # define formatting functions
-        keyformat   = lambda key  : str(key)   + ' '*(longest_key-len(str(key)))
-        valueformat = lambda value: str(value) + ' '*(longest_value-len(str(value)))
+    #     # define formatting functions
+    #     keyformat   = lambda key  : str(key)   + ' '*(longest_key-len(str(key)))
+    #     valueformat = lambda value: str(value) + ' '*(longest_value-len(str(value)))
 
-        # generate table content
-        content  = ["|{}|".format(keyformat(key))+"|\t{}|".format(valueformat(value)) for key, value in self._tree.items()]
+    #     # generate table content
+    #     content  = ["|{}|".format(keyformat(key))+"|\t{}|".format(valueformat(value)) for key, value in self._tree.items()]
 
-        # return table
-        return preamble+'\n'.join(content)
+    #     # return table
+    #     return preamble+'\n'.join(content)
     
 
 class PathConfig(Config):
@@ -216,10 +245,20 @@ class PathConfig(Config):
     @property
     def verified(self) -> bool:
         # verify that all registered directories exists on system
-        return all([path.exists() for path in self.tree.values() if isinstance(path, Path)])
+        return all([path.exists() for path in self._tree.values() if not self._tree is None])
 
 if __name__ == '__main__':
     cfg = PathConfig()
     cfg.register('source','my/path/string')
 
     print(cfg.verified)
+    print(cfg)
+    
+    othercfg = PathConfig()
+    othercfg.register('data','my/path/string')
+
+    print(othercfg)
+    
+    combinedcfg = cfg + othercfg
+    
+    print(combinedcfg.source)

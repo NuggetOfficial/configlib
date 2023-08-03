@@ -36,7 +36,7 @@ cfg.writeto(fpath='your_file')
 # read my config from disk
 cfg = Config.readfrom(fpath='your_file')
 ```
-When no path string is given it the `ConfigIO` object will default to writing to and reading from `config.yaml` in your current working directory as given by the `pathlib` library.
+When no path string is given it the `ConfigIO` object will default to writing to and reading from `'config.yaml'` in your current working directory as given by the `pathlib` library.
 Alternatively, you may want to do more sophisticated read and write actions. In that case, the `ConfigIO` class can be called directly.
 
 ```python

@@ -166,7 +166,6 @@ class Config:
         self.__dict__[dname] = fpath
 
     
-
     # IO #
     def writeto(self, saveas:Path=None) -> None:
         # write using IO object

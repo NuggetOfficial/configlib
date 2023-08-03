@@ -27,7 +27,7 @@ def my_data_load_funntion(fromdir): ...
 # call using the earlier created config object
 my_data_load_function(fromdir=cfg.data)
 ```
-These objects can be saved to and read from disk using the YAML standard. This is done through an `ConfigIO` object. The writeto and readfrom methods of this object
+These objects can be saved to and read from disk using the YAML standard. This is done through an `ConfigIO` object. The `writeto` and `readfrom` methods of this object
 are handed to the `Config` object using a composition strategy. This allows us to use the object as follows.
 ```python
 # write my beautiful config to disk

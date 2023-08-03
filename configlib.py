@@ -70,7 +70,7 @@ class Config:
         self._banned: list[str] = ['register', 'writeto', 'readfrom', 'tree', 'banned', 'strict']
         self._strict = strict
 
-    # base properties #
+    # defined properties #
     @property
     def tree(self):
         # expose private _tree to user
@@ -86,43 +86,40 @@ class Config:
         # expose private _strict to user
         return self._strict
     
-    ##
-    @property
-    def verified(self) -> bool:
-        # verify that all registered directories exists on system
-        return all([path.exists() for path in self.tree.values() if isinstance(path, Path)])
-    
     # util #
-    def _isbanned(self, dname:str):
+    def _isbanned(self, alias:str):
         # check if name is private (_), private protected (__), dunder or sunder
-        isdsunder = dname[:2] =='__' or dname[-2:] == '__' or dname[-1:] == '_' or dname[:1] == '_'
+        isdsunder = alias[:2] =='__' or alias[-2:] == '__' or alias[-1:] == '_' or alias[:1] == '_'
 
         # return true if name is banned or private (_), private protected (__), dunder or sunder.
-        return dname in self._banned or isdsunder
+        return alias in self._banned or isdsunder
     
-    # functionality #
-    def register(self, dname:str, fpath:Path, *, forcecreate:bool=False, overwrite:bool=False) -> None:
-        
-        # catch typing edge case
-        if type(fpath) is str:
-            fpath = Path(fpath)
+    def __finalise_entry__(self, alias:str, value:Path, **kwargs: dict):
+        '''function called before alias and value are registered. In when subclassing the Config object
+        overwrite this function with your desired functionality.'''
 
+        # return alias and value to add
+        return alias, value
+
+    # functionality #
+    def register(self, alias:str, value:Path, *, overwrite:bool=False, **kwargs:dict) -> None:
+        
         # catch banned name:
-        if self._isbanned(dname):
+        if self._isbanned(alias):
 
             # if strict throw error
             if self._strict:
                 raise NameError
             
             # create message
-            msg = f'{dname} is a banned name. Please provide a different name'
+            msg = f'{alias} is a banned name. Please provide a different name'
 
             # else warn used and do Nothing
             warnings.warn(msg)
             return None
 
         # catch already registerd
-        if dname in vars(self).keys():
+        if alias in vars(self).keys():
             
             # if user did not specify overwrite
             if not overwrite:
@@ -132,38 +129,22 @@ class Config:
                     raise AliasUnavailableError
                 
                 # else create message
-                msg = f'{dname} is already registered, if you mean to overwrite the path please provide overwrite=True to the function call.'
+                msg = f'{alias} is already registered, if you mean to overwrite the path please provide overwrite=True to the function call.'
 
                 # amd warn user, do nothing
                 warnings.warn(msg)
                 return None
-            
-        # check if exists on system -> not?
-        if not fpath.exists():
-            
-            # if allowed to create 
-            if forcecreate:
-                    # then create
-                    fpath.mkdir(parents=True)
-                    logging.info(f'Directory {fpath} successfully created!')
 
-            elif self._strict:
-                # in case strict: throw blocking error     
-                raise FileNotFoundError(f'Did not find directory <{fpath}>.')
-            else:
-                # create message,
-                msg = f'directory "{fpath}", registered as <{dname}>, does not exist on system!'
-
-                # warn user and do nothing
-                warnings.warn(msg)
+        # finalise array depending on config type
+        alias, value = self.__finalise_entry__(alias, value, **kwargs)
 
         # add to tree
-        logging.info(f'added directory {fpath} under alias {dname} to config')
-        self._tree[dname] = fpath
+        logging.info(f'added directory {value} under alias {alias} to config')
+        self._tree[alias] = value
 
         # add as property dynamically: this is dangerous!
         # --> Make sure all <self> altering edge cases are caught before this line
-        self.__dict__[dname] = fpath
+        self.__dict__[alias] = value
 
     
     # IO #
@@ -185,7 +166,6 @@ class Config:
         
         # define pre and post amble of repr object
         preamble = f'\n {type(self)} @ <{hex(id(self))}> \n'
-        postamble= '\n all verified:\t{} \n'.format(self.verified)
 
         # define formatting functions
         keyformat   = lambda key  : str(key)   + ' '*(longest_key-len(str(key)))
@@ -195,4 +175,46 @@ class Config:
         content  = ["|{}|".format(keyformat(key))+"|\t{}|".format(valueformat(value)) for key, value in self._tree.items()]
 
         # return table
-        return preamble+'\n'.join(content)+postamble
+        return preamble+'\n'.join(content)
+    
+
+class PathConfig(Config):
+    def __finalise_entry__(self, alias:str, value:Path, **kwargs:dict):
+        
+        # catch typing edge case
+        if type(value) is str:
+            value = Path(value)
+
+         # check if exists on system -> not?
+        if not value.exists():
+            
+            # if allowed to create 
+            if getattr(kwargs, 'forcecreate', False):
+                    # then create
+                    value.mkdir(parents=True)
+                    logging.info(f'Directory {value} successfully created!')
+
+            elif self._strict:
+                # in case strict: throw blocking error     
+                raise FileNotFoundError(f'Did not find directory <{value}>.')
+            else:
+                # create message,
+                msg = f'directory "{value}", registered as <{alias}>, does not exist on system!'
+
+                # warn user and do nothing
+                warnings.warn(msg)
+        
+        # return alias and value to register
+        return alias, value
+    
+    # derived properties #
+    @property
+    def verified(self) -> bool:
+        # verify that all registered directories exists on system
+        return all([path.exists() for path in self.tree.values() if isinstance(path, Path)])
+
+if __name__ == '__main__':
+    cfg = PathConfig()
+    cfg.register('source','my/path/string')
+
+    print(cfg.verified)

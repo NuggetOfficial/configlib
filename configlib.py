@@ -21,22 +21,22 @@ class AliasUnavailableError(Exception):
 class ConfigIO:
 
     @staticmethod
-    def writeto(config:Config, saveas:Path=None) -> None:
+    def writeto(config:Config, fpath:Path=None) -> None:
 
         # default case
-        if saveas is None:
-            saveas = DEFAULT_PATH_TO_CONFIG
+        if fpath is None:
+            fpath = DEFAULT_PATH_TO_CONFIG
 
         # catch edge case where saveas is given as a str
-        if not isinstance(saveas, Path):
-            saveas=Path(saveas)
+        if not isinstance(fpath, Path):
+            fpath=Path(fpath)
 
         # if yaml file extension not in path -> add
-        if not (str(saveas).endswith('.yml') or str(saveas).endswith('.yaml')):
-            saveas = Path(str(saveas)+'.yml')
+        if not (str(fpath).endswith('.yml') or str(fpath).endswith('.yaml')):
+            fpath = Path(str(fpath)+'.yml')
 
         # save to disk in str format (! not bytes)
-        with open(saveas,'w') as fp:
+        with open(fpath,'w') as fp:
 
             # write to disk
             dump(config.tree, fp)
@@ -44,8 +44,13 @@ class ConfigIO:
     @staticmethod
     def readfrom(configType:Config, fpath:Path=None) -> Config:
 
+        # default case
         if fpath is None:
             fpath = DEFAULT_PATH_TO_CONFIG
+        
+        # catch edge case where saveas is given as a str
+        if not isinstance(fpath, Path):
+            fpath=Path(fpath)
 
         # open read only
         with open(fpath,'r') as fp:
@@ -165,7 +170,7 @@ class Config:
     # IO #
     def writeto(self, saveas:Path=None) -> None:
         # write using IO object
-        ConfigIO.writeto(self, saveas=saveas)
+        ConfigIO.writeto(self, fpath=saveas)
 
     @classmethod
     def readfrom(cls, fpath:Path=None) -> Config:

@@ -6,6 +6,7 @@ The current intenstion behind the package is that a single import will handle yo
 same names. This makes large data reduction scrips easier to setup and will it easier to make your project portable, both in system and also across systems.
 
 ## Documentation
+###Example case:
 To start we add a simple import line to our majestic python file.
 ```python
 from configlib import Config

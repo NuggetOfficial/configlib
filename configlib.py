@@ -171,8 +171,7 @@ class Config:
     def __add__(self, other:Config) -> Config:
 
         # merge trees
-        newtree = vars(self).update(vars(other))
-        print(newtree)
+        newtree = self._tree.update(other._tree)
 
         # Create new Config object
         cfg = Config(tree=newtree, strict=False)

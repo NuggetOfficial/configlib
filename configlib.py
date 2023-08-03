@@ -1,9 +1,14 @@
+# future annotations
 from __future__ import annotations
 
+# buildin
 from pathlib import Path
-from yaml import load, dump, Loader
+from typing import Any
 import logging
 import warnings
+
+# dependencies
+from yaml import load, dump, Loader
 
 # Global default path 
 DEFAULT_PATH_TO_CONFIG = Path.cwd()/'config.yml'
@@ -102,7 +107,7 @@ class Config:
         return alias, value
 
     # functionality #
-    def register(self, alias:str, value:Path, *, overwrite:bool=False, **kwargs:dict) -> None:
+    def register(self, alias:str, value:Any, *, overwrite:bool=False, **kwargs:dict) -> None:
         
         # catch banned name:
         if self._isbanned(alias):

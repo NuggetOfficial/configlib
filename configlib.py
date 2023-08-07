@@ -75,8 +75,8 @@ class ConfigRepr:
     def __repr__(config: Config):
            
         # get longest entries, char wise
-        longest_value= max([len(str(path))  for path  in config._tree.values()])
-        longest_key  = max([len(str(alias)) for alias in config._tree.keys()])
+        longest_value= max([len(str(path))  for path  in config._handler._tree.values()])
+        longest_key  = max([len(str(alias)) for alias in config._handler._tree.keys()])
         
         # define formatting functions
         keyformat   = lambda key  : str(key)   + ' '*(longest_key-len(str(key)))
@@ -84,41 +84,37 @@ class ConfigRepr:
 
         # define pre and post amble of repr object
         preamble = f'\n {type(config)} @ <{hex(id(config))}> \n'
-        postamble = '\n---- verified:\t{} ----\n'.format(getattr(config, 'verified', None))
+        postamble = '\n---- verified:\t{} ----\n'.format(config.verified())
 
         # generate table content
-        content  = ["|{}|".format(keyformat(key))+"|\t{}|".format(valueformat(value)) for key, value in config._tree.items()]
+        content  = ["|{}|".format(keyformat(key))+"|\t{}|".format(valueformat(value)) for key, value in config._handler._tree.items()]
 
         # return table
         return preamble+'\n'.join(content)+postamble
-    
+
+class ConfigDict:
+    def __init__(self, tree:dict={}, strict:bool=False) -> None:
+        self._tree = tree
+        self._strict = strict
 
 class Config:
     'Config object that allows you to register variables and IO them to disk uisng the YAML standard.'
     # Initialisation # 
-    def __init__(self, tree:dict={}, strict:bool=False) -> None:
+    def __init__(self, strict:bool=False) -> None:
 
-        self._tree: dict = tree
-        self._banned: list[str] = ['register', 'writeto', 'readfrom', 'tree', 'banned', 'strict']
-        self._strict = strict
+        self._handler = ConfigDict(dict(), strict)
+        self._banned: list[str] = ['register', 'writeto', 'readfrom', 'tree', 'banned', 'strict','verified']
 
-        # post init
-        self.__post_init__()
+    def __conform_subclass__(self):
+        if self._handler._tree !={}:
+            # after initialisation if tree is not empty, make sure it conforms to __finalise_entry__
+            self._handler._tree = {alias:self.__finalise_entry__(alias, value)[-1] for alias, value in self._handler._tree.items()}
 
-    def __post_init__(self):
-
-        # if a tree is set by the user
-        if self._tree != {}:
-
-            # register all the entries
-            [self.register(alias, value) for alias, value in self._tree.items()]
-
-    
-    # defined properties #
+    # # defined properties #
     @property
     def tree(self):
         # expose private _tree to user
-        return self._tree
+        return self._handler._tree
     
     @property
     def banned(self):
@@ -128,7 +124,7 @@ class Config:
     @property
     def strict(self):
         # expose private _strict to user
-        return self._strict
+        return self._handler._strict
     
     # util #
     @staticmethod
@@ -152,74 +148,85 @@ class Config:
 
     # core functionality #
     def register(self, alias:str, value:Any, *, overwrite:bool=False, **kwargs:dict) -> None:
-        
-        # catch banned name:
+
+         # catch banned name:
         if self._isbanned(alias):
 
             # if strict throw error
-            if self._strict:
+            if self._handler._strict:
                 raise NameError
-            
-            # create message
-            msg = f'{alias} is a banned name. Please provide a different name'
 
             # else warn used and do Nothing
-            warnings.warn(msg)
+            warnings.warn(f'{alias} is a banned name. Please provide a different name', UserWarning)
             return None
 
         # catch already registerd
-        if alias in vars(self).keys():
-            
+        if alias in self._handler._tree:
             # if user did not specify overwrite
             if not overwrite:
 
-                if self._strict:
+                if self._handler._strict:
                     # raise blocking Error
                     raise AliasUnavailableError
                 
-                # else create message
-                msg = f'{alias} is already registered, if you mean to overwrite the path please provide overwrite=True to the function call.'
-
-                # amd warn user, do nothing
-                warnings.warn(msg)
+                # otherwise warn user and do nothing
+                warnings.warn(f'{alias} is already registered, if you mean to overwrite the path please provide overwrite=True to the function call.', UserWarning)
                 return None
 
         # finalise array depending on config type
         alias, value = self.__finalise_entry__(alias, value, **kwargs)
 
-        # add to tree
-        logging.info(f'added directory {value} under alias {alias} to config')
-        self._tree[alias] = value
-
         # add as property dynamically: this is dangerous!
         # --> Make sure all <self> altering edge cases are caught before this line
-        self.__setattr__(alias,value)
-
-    # def __setattr__(self, __name: str, __value: Any) -> None:
-
-    #     if self._isbanned()
-
-    #     if __name not in self._tree:
-    #         self._tree[__name]=__value
+        self._handler._tree[alias] = value
+        logging.info(f'added directory {value} under alias {alias} to config')
         
-        
-        
-    # def __getattribute__(self, __name: str) -> Any:
-    #     pass
+    def __getattribute__(self, __name: str) -> Any:
+        # callback hook for every dot search
+        return super().__getattribute__(__name)
+    
+    def __getattr__(self, __name: str) -> Any:
+        # if __getattribute__ raises attribute error search in the _handler
+        # get handler from super in order to get _tree
+        _handler = self._handler
+        _tree    = _handler._tree
 
+        # check if key is in the _tree
+        if __name in _tree:
+            # then return
+            return _tree[__name]
+        
+        # otherwise
+        else:
+            # if strict
+            if _handler._strict:
+                # raise blocking error
+                raise AttributeError(f"Attribute {__name} was not registered in Config object, please make sure to .register the attribute first")
+            # else warn user
+            warnings.warn(f"Attribute {__name} was not registered in Config object, please make sure to .register the attribute first", UserWarning)
 
     def __add__(self, other:Config) -> Config:
-        
-        if type(self) == type(other):
-            # merge trees
-            newtree = self._tree | other._tree
-            
-            # Create new Config object
-            cfg = Config(tree=newtree, strict=False)
+        # + operator is overwritten to merge and prioritise left
+        # merge trees
+        newtree = self._handler._tree | other._handler._tree 
+        # return new cfg
+        return other._create_(newtree, strict=False)
+    
+    def __truediv__(self, other: Config):
+        # / operator is overwritten to merge and prioritise right
+        # merge trees
+        newtree = other._handler._tree | self._handler._tree
+        # return new cfg
+        return self._create_(newtree, strict=False)
+    
+    @classmethod
+    def _create_(cls, tree:dict, strict:bool):
+        # helper function for __dunder__ operation overwrites
+        cfg = cls(strict=False)
+        cfg.settree(tree)
 
-            # return new cfg
-            return cfg
-
+        # return new object with intialised tree
+        return cfg
     
     # IO #
     def writeto(self, fpath:Path=None) -> None:
@@ -235,6 +242,16 @@ class Config:
     def __repr__(self) -> str:
        return ConfigRepr.__repr__(self)
     
+    def verified(self) -> bool:
+        return False
+    
+    def settree(self, tree:dict) -> None:
+        # set tree in handler directly
+        self._handler._tree = tree
+
+        # and make sure that the tree conforms to the subclass specific rules
+        self.__conform_subclass__()
+
 class FileConfig(Config):
     def __finalise_entry__(self, alias:str, value:Path, **kwargs:dict):
         
@@ -251,42 +268,23 @@ class FileConfig(Config):
                     value.mkdir(parents=True)
                     logging.info(f'Directory {value} successfully created!')
 
-            elif self._strict:
+            elif self._handler._strict:
                 # in case strict: throw blocking error     
                 raise FileNotFoundError(f'Did not find directory <{value}>.')
             else:
-                # create message,
-                msg = f'directory "{value}", registered as <{alias}>, does not exist on system!'
 
                 # warn user and do nothing
-                warnings.warn(msg)
+                warnings.warn(f'directory "{value}", registered as <{alias}>, does not exist on system!', UserWarning)
         
         # return alias and value to register
         return alias, value
     
     # derived properties #
-    @property
     def verified(self) -> bool:
         # verify that all registered directories exists on system
-        return all([path.exists() for path in self._tree.values() if not self._tree is None])
+        return all([path.exists() for path in self._handler._tree.values() if not self._handler._tree is None])
+    
 
-if __name__ == '__main__':
-    cfg = FileConfig()
-    cfg.register('source','my/path/source')
-    #print(cfg)
-
-    #tree = {'source':'my/path/source', 'data':'my/path/data'}
-    #precfg= FileConfig(tree=tree)
-    #print(precfg)
-    print(cfg)
-    othercfg = FileConfig()
-    othercfg.register('data','my/path/data')
-    print(cfg)
-
-    combinedcfg = cfg + othercfg
-    #print(cfg)
-    #print(othercfg)
-    #print(combinedcfg)
 
     
     

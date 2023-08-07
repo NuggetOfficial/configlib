@@ -19,14 +19,15 @@ cfg = Config()
 # add directories to project config
 cfg.register('source','my/path/source')
 cfg.register('data','my/path/data')
+cfg.register('skiprows',1)
 ```
 These object can then be called as properties as follows:
 ```python
 # define some data loading function
-def my_data_load_funntion(fromdir): ...
+def my_data_load_funntion(fromdir, skiprows=0): ...
 
 # call using the earlier created config object
-my_data_load_function(fromdir=cfg.data)
+my_data_load_function(fromdir=cfg.data, skiprows=cfg.skiprows)
 ```
 These objects can be saved to and read from disk using the YAML standard. This is done through an `ConfigIO` object. The `writeto` and `readfrom` methods of this object
 are handed to the `Config` object using a composition strategy. This allows us to use the object as follows.
@@ -49,7 +50,30 @@ ConfigIO.writeto(cfg, fpath='your_file')
 # read in the same manner 
 ConfigIO.readfrom(Config, fpath='your_file')
 ```
-This allows you to instantiate more sophisticated `Config` classes that you are free to create :)
+Although I have no particular use case intended for this. Im sure some of you will find it useful.
+### More advanced:
+In the offshoot that you have to not only load data that require some globals but you're also interested in output directories, intermediate directories, data reduction parameters, etc. etc... You might be better of creating several config objects each with their own purpose.
+```python
+from configlib import Config, FileConfig
+
+# create config object for handling directories and files
+filecfg = FileConfig()
+cfg.register('source','my/path/source')
+cfg.register('data','my/path/data')
+
+# create config object for some fitting algorithm
+fitcfg = Config()
+fitcfg.register('order', 5)          # 5th order polynomial
+fitcfg.register('method', 'leastsq') # using leastsquares method
+fitcfg.register('burnin', 50)        # and throw the first 50 samples away
+```
+Should you want to, these config object can be merged into one config objects. To do so, we can use the `+`, `/` and `//` operations.
+The `+` operations will add and overwrite the object on the rightside of the `+` onto the left. This also means that the final class of the
+config object will be the class of the left right object
+
+The `/` operation will add the object but will prioritise the class and attributes of the object on the left.
+Finally, the `//` operator will add the object, it will prioritise the left object but it will always cast the type to be the basic `Config` class.
+
 
 
 

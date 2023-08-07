@@ -70,7 +70,6 @@ fitcfg.register('burnin', 50)        # and throw the first 50 samples away
 Should you want to, these config object can be merged into one config objects. To do so, we can use the `+`, `/` and `//` operations.
 The `+` operations will add and overwrite the object on the rightside of the `+` onto the left. This also means that the final class of the
 config object will be the class of the left right object
-
 The `/` operation will add the object but will prioritise the class and attributes of the object on the left.
 Finally, the `//` operator will add the object, it will prioritise the left object but it will always cast the type to be the basic `Config` class.
 

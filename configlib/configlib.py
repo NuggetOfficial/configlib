@@ -10,6 +10,8 @@ import warnings
 # dependencies
 from yaml import load, dump, Loader
 
+__all__ = ['NameError', 'AliasUnavailableError', 'ConfigIO', 'Config', 'FileConfig']
+
 # Global default path 
 DEFAULT_PATH_TO_CONFIG = Path.cwd()/'config.yml'
 
@@ -393,16 +395,22 @@ def UnitTests() -> bool:
     cfg.register('configlib','configlib.py')
     if not cfg.verified():
         return False
+    
+    # test warning
+    del cfg
+    cfg = FileConfig()
+    with warnings.catch_warnings(category=UserWarning, append=True, action='error') as w:
+        try:
+            cfg.register('source', 'my/path/source')
+            return False
+        except UserWarning:
+            pass
     return True
 
 
 if __name__ == '__main__':
     if UnitTests():
+        # log succesful
         logging.info('Package testes succesfully')
     else:
         logging.warning('Package critically failed Unit testing!')
-
-
-    
-    
-    

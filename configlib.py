@@ -70,9 +70,32 @@ class ConfigIO:
         # return initialised Config object
         return configType(tree)
 
+class ConfigRepr:
+    @staticmethod
+    def __repr__(config: Config):
+           
+        # get longest entries, char wise
+        longest_value= max([len(str(path))  for path  in config._tree.values()])
+        longest_key  = max([len(str(alias)) for alias in config._tree.keys()])
+        
+        # define formatting functions
+        keyformat   = lambda key  : str(key)   + ' '*(longest_key-len(str(key)))
+        valueformat = lambda value: str(value) + ' '*(longest_value-len(str(value)))
+
+        # define pre and post amble of repr object
+        preamble = f'\n {type(config)} @ <{hex(id(config))}> \n'
+        postamble = '\n---- verified:\t{} ----\n'.format(getattr(config, 'verified', None))
+
+        # generate table content
+        content  = ["|{}|".format(keyformat(key))+"|\t{}|".format(valueformat(value)) for key, value in config._tree.items()]
+
+        # return table
+        return preamble+'\n'.join(content)+postamble
+    
 
 class Config:
     'Config object that allows you to register variables and IO them to disk uisng the YAML standard.'
+    # Initialisation # 
     def __init__(self, tree:dict={}, strict:bool=False) -> None:
 
         self._tree: dict = tree
@@ -89,8 +112,8 @@ class Config:
 
             # register all the entries
             [self.register(alias, value) for alias, value in self._tree.items()]
-            
 
+    
     # defined properties #
     @property
     def tree(self):
@@ -108,14 +131,19 @@ class Config:
         return self._strict
     
     # util #
-    def _isbanned(self, alias:str):
-        # check if name is private (_), private protected (__), dunder or sunder
-        isdsunder = alias[:2] =='__' or alias[-2:] == '__' or alias[-1:] == '_' or alias[:1] == '_'
-
-        # return true if name is banned or private (_), private protected (__), dunder or sunder.
-        return alias in self._banned or isdsunder
+    @staticmethod
+    def _isdunder(alias:str) -> bool:
+        return alias[:2] =='__' or alias[-2:] == '__'
     
-    def __finalise_entry__(self, alias:str, value:Path, **kwargs: dict):
+    @staticmethod
+    def _issunder(alias:str) -> bool:
+        return alias[-1:] == '_' or alias[:1] == '_'
+    
+    def _isbanned(self, alias:str) -> str:
+        # return true if name is banned or private (_), private protected (__), dunder or sunder.
+        return alias in self._banned or self._isdunder(alias) or self._issunder(alias)
+    
+    def __finalise_entry__(self, alias:str, value:Any, **kwargs: dict):
         '''function called before alias and value are registered. In when subclassing the Config object
         overwrite this function with your desired functionality.'''
 
@@ -165,20 +193,33 @@ class Config:
 
         # add as property dynamically: this is dangerous!
         # --> Make sure all <self> altering edge cases are caught before this line
-        self.__dict__[alias] = value
+        self.__setattr__(alias,value)
+
+    # def __setattr__(self, __name: str, __value: Any) -> None:
+
+    #     if self._isbanned()
+
+    #     if __name not in self._tree:
+    #         self._tree[__name]=__value
+        
+        
+        
+    # def __getattribute__(self, __name: str) -> Any:
+    #     pass
 
 
     def __add__(self, other:Config) -> Config:
+        
+        if type(self) == type(other):
+            # merge trees
+            newtree = self._tree | other._tree
+            
+            # Create new Config object
+            cfg = Config(tree=newtree, strict=False)
 
-        # merge trees
-        newtree = self._tree.update(other._tree)
+            # return new cfg
+            return cfg
 
-        # Create new Config object
-        cfg = Config(tree=newtree, strict=False)
-
-        # return new cfg
-        return cfg
-    
     
     # IO #
     def writeto(self, fpath:Path=None) -> None:
@@ -190,28 +231,11 @@ class Config:
         # read using IO object
         ConfigIO.readfrom(cls, fpath=fpath)
 
-    # # Printable #
-    # def __repr__(self):
-
-    #     # get longest entries, char wise
-    #     longest_value= max([len(str(path))  for path  in self._tree.values()])
-    #     longest_key  = max([len(str(alias)) for alias in self._tree.keys()])
-        
-    #     # define pre and post amble of repr object
-    #     preamble = f'\n {type(self)} @ <{hex(id(self))}> \n'
-
-    #     # define formatting functions
-    #     keyformat   = lambda key  : str(key)   + ' '*(longest_key-len(str(key)))
-    #     valueformat = lambda value: str(value) + ' '*(longest_value-len(str(value)))
-
-    #     # generate table content
-    #     content  = ["|{}|".format(keyformat(key))+"|\t{}|".format(valueformat(value)) for key, value in self._tree.items()]
-
-    #     # return table
-    #     return preamble+'\n'.join(content)
+    # UI #
+    def __repr__(self) -> str:
+       return ConfigRepr.__repr__(self)
     
-
-class PathConfig(Config):
+class FileConfig(Config):
     def __finalise_entry__(self, alias:str, value:Path, **kwargs:dict):
         
         # catch typing edge case
@@ -247,17 +271,23 @@ class PathConfig(Config):
         return all([path.exists() for path in self._tree.values() if not self._tree is None])
 
 if __name__ == '__main__':
-    cfg = PathConfig()
-    cfg.register('source','my/path/string')
+    cfg = FileConfig()
+    cfg.register('source','my/path/source')
+    #print(cfg)
 
-    print(cfg.verified)
+    #tree = {'source':'my/path/source', 'data':'my/path/data'}
+    #precfg= FileConfig(tree=tree)
+    #print(precfg)
     print(cfg)
-    
-    othercfg = PathConfig()
-    othercfg.register('data','my/path/string')
+    othercfg = FileConfig()
+    othercfg.register('data','my/path/data')
+    print(cfg)
 
-    print(othercfg)
-    
     combinedcfg = cfg + othercfg
+    #print(cfg)
+    #print(othercfg)
+    #print(combinedcfg)
+
     
-    print(combinedcfg.source)
+    
+    

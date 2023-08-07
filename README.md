@@ -73,7 +73,3 @@ config object will be the class of the left right object
 
 The `/` operation will add the object but will prioritise the class and attributes of the object on the left.
 Finally, the `//` operator will add the object, it will prioritise the left object but it will always cast the type to be the basic `Config` class.
-
-
-
-

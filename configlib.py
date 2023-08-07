@@ -56,7 +56,7 @@ class ConfigIO:
             dump(config.tree, fp)
 
     @classmethod
-    def readfrom(cls, configType:Config, fpath:Path=None) -> Config:
+    def readfrom(cls, configClass:Config, fpath:Path=None) -> Config:
 
          # do standard checks
         fpath = cls.__default_checks__(fpath)
@@ -67,8 +67,12 @@ class ConfigIO:
             # read tree from disk
             tree = load(fp, Loader)
 
+        # Initialse config object and set tree
+        obj = configClass()
+        obj.settree(tree)
+
         # return initialised Config object
-        return configType(tree)
+        return obj
 
 class ConfigRepr:
     @staticmethod
@@ -225,7 +229,7 @@ class Config:
         newtree = other._handler._tree | self._handler._tree
 
         # create object as in self._create_ but we want to force the Config baseclass
-        cfg = Config(newtree, strict=False)
+        cfg = Config(strict=False)
         cfg.settree(newtree)
 
         # return new cfg
@@ -248,11 +252,14 @@ class Config:
     @classmethod
     def readfrom(cls, fpath:Path=None) -> Config:
         # read using IO object
-        ConfigIO.readfrom(cls, fpath=fpath)
+        return ConfigIO.readfrom(cls, fpath=fpath)
 
     # UI #
     def __repr__(self) -> str:
        return ConfigRepr.__repr__(self)
+    
+    def __eq__(self, other: Config) -> bool:
+        return self._handler._tree == other._handler._tree
     
     def verified(self) -> bool:
         return False
@@ -263,6 +270,7 @@ class Config:
 
         # and make sure that the tree conforms to the subclass specific rules
         self.__conform_subclass__()
+
 
 class FileConfig(Config):
     def __finalise_entry__(self, alias:str, value:Path, **kwargs:dict):
@@ -295,7 +303,104 @@ class FileConfig(Config):
     def verified(self) -> bool:
         # verify that all registered directories exists on system
         return all([path.exists() for path in self._handler._tree.values() if not self._handler._tree is None])
+
+
+def UnitTests() -> bool:
+
+    # create config and register
+    cfg = Config()
+    cfg.register('mystring','hello world')
+    cfg.register('mybool', False)
+    cfg.register('myint', 1)
+    cfg.register('myfloat', 1.)
+    cfg.register('mylist', list([1.,2.]))
+    cfg.register('mydict', {'a':1, 'b':2})
+
+    # other cfg
+    other_cfg = Config()
+    other_cfg.register('myfloat', 5.)
+
+    # test operations
+    res = cfg + other_cfg
+    if res.myfloat != 5.:
+        return False
+    res = cfg / other_cfg
+    if res.myfloat != 1.:
+        return False
+    res = cfg // other_cfg
+    if res.myfloat != 1.:
+        return False
+    del other_cfg
     
+    # test write, test read
+    _cfg = cfg
+    cfg.writeto()
+    del cfg
+    cfg = Config.readfrom()
+    if _cfg != cfg:
+        return False
+    del _cfg, cfg
+
+    # import os and platform to force remove file after read write test
+    import os
+    import platform
+    match platform.system().lower():
+        case 'windows':
+            os.system('del -f config.yml')
+        case 'linux':
+            os.system('rm -f config.yml')
+
+    # del both
+    del os, platform
+    
+    # test cross configClass operations
+    cfg      = Config()
+    file_cfg = FileConfig()
+    if type(cfg+file_cfg) != FileConfig or\
+       type(file_cfg+cfg) != Config or\
+       type(file_cfg // cfg) != Config or\
+       type(cfg / file_cfg) != Config or\
+       type(file_cfg / cfg) != FileConfig:
+        return False
+    del cfg
+    del file_cfg
+
+    # test errors
+    cfg = Config(strict=True)
+    try: 
+        cfg.register('tree', 'tree')
+        return False
+    except NameError:
+        pass
+    cfg.register('myfloat', 5.)
+    try:
+        cfg.register('myfloat', 1.)
+        return False
+    except AliasUnavailableError:
+        pass
+    try:
+        cfg.myint
+        return False
+    except AttributeError:
+        pass
+    del cfg
+    cfg = FileConfig(strict=True)
+    try:
+        cfg.register('source', 'my/path/source')
+        return False
+    except FileNotFoundError:
+        pass
+    cfg.register('configlib','configlib.py')
+    if not cfg.verified():
+        return False
+    return True
+
+
+if __name__ == '__main__':
+    if UnitTests():
+        logging.info('Package testes succesfully')
+    else:
+        logging.warning('Package critically failed Unit testing!')
 
 
     

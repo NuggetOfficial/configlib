@@ -219,6 +219,18 @@ class Config:
         # return new cfg
         return self._create_(newtree, strict=False)
     
+    def __floordiv__(self, other: Config):
+        # // operator is overwritten to merge and always go to base class
+        # merge trees
+        newtree = other._handler._tree | self._handler._tree
+
+        # create object as in self._create_ but we want to force the Config baseclass
+        cfg = Config(newtree, strict=False)
+        cfg.settree(newtree)
+
+        # return new cfg
+        return cfg
+    
     @classmethod
     def _create_(cls, tree:dict, strict:bool):
         # helper function for __dunder__ operation overwrites

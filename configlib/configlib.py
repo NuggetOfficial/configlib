@@ -285,10 +285,10 @@ class FileConfig(Config):
         if not value.exists():
             
             # if allowed to create 
-            if getattr(kwargs, 'forcecreate', False):
-                    # then create
-                    value.mkdir(parents=True)
-                    logging.info(f'Directory {value} successfully created!')
+            if kwargs.get('forcecreate') if 'forcecreate' in kwargs else False:
+                # then create
+                value.mkdir(parents=True)
+                logging.info(f'Directory {value} successfully created!')
 
             elif self._handler._strict:
                 # in case strict: throw blocking error     
@@ -351,9 +351,6 @@ def UnitTests() -> bool:
             os.system('del -f config.yml')
         case 'linux':
             os.system('rm -f config.yml')
-
-    # del both
-    del os, platform
     
     # test cross configClass operations
     cfg      = Config()
@@ -392,10 +389,14 @@ def UnitTests() -> bool:
         return False
     except FileNotFoundError:
         pass
-    cfg.register('configlib','configlib.py')
+    try:
+        cfg.register('test',Path.cwd()/'configlib_unittest', forcecreate=True)
+    except FileNotFoundError:
+        return False
     if not cfg.verified():
         return False
-    
+    os.rmdir(Path.cwd()/'configlib_unittest')
+                    
     # test warning
     del cfg
     cfg = FileConfig()
@@ -405,6 +406,7 @@ def UnitTests() -> bool:
             return False
         except UserWarning:
             pass
+    del os, platform
     return True
 
 

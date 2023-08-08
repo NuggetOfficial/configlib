@@ -285,7 +285,7 @@ class FileConfig(Config):
         if not value.exists():
             
             # if allowed to create 
-            if kwargs.get('forcecreate') if 'forcecreate' in kwargs else False:
+            if kwargs.pop('forcecreate', False):
                 # then create
                 value.mkdir(parents=True)
                 logging.info(f'Directory {value} successfully created!')

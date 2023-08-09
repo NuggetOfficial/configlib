@@ -1,8 +1,9 @@
 from setuptools import setup
 
 setup(
-    name='configlib',
+    name='configlib_tw',
     long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
     description='package to neetly organise your global config parameters',
     author='Tom van der Wielen',
     author_email='vdwielen@strw.leidenuniv.nl',
@@ -14,9 +15,8 @@ setup(
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Developers',
-        'Topic :: Project Management :: Configuration ',
-        'License :: OSI Approved :: GNU License',
-        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.11'
+        'Lisence :: OSI Approved :: GNU GENERAL PUBLIC LICENCE V#',
     ],
     keywords='configuration project'
 )

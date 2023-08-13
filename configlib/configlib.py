@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 # buildin
+from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from typing import Any
 import logging
@@ -10,10 +11,11 @@ import warnings
 # dependencies
 from yaml import load, dump, Loader
 
-__all__ = ['NameError', 'AliasUnavailableError', 'ConfigIO', 'Config', 'FileConfig']
+__all__ = ['NameError', 'AliasUnavailableError', 'ConfigIO', 'Config', 'FileConfig', 'ArgumentParserWithFallback']
 
 # Global default path 
 DEFAULT_PATH_TO_CONFIG = Path.cwd()/'config.yml'
+WARNING_STACK_LVL = 5
 
 class NameError(Exception):
     def __init__(self, *args: object) -> None:
@@ -24,6 +26,12 @@ class AliasUnavailableError(Exception):
     def __init__(self, *args: object) -> None:
         msg = 'Unsupported Variable name. The alias has already been registered! please provide a different name.'
         super().__init__(msg, *args)
+
+class DefaultNotRegisteredError(Exception):
+    def __init__(self, arg:str, *args: object) -> None:
+        msg = f'No default argument for <{arg}> in the fallback config, please register a default value in the fallback config.'
+        super().__init__(msg, *args)
+
 
 class ConfigIO:
 
@@ -55,7 +63,7 @@ class ConfigIO:
         with open(fpath,'w') as fp:
 
             # write to disk
-            dump(config.tree, fp)
+            dump({'tree':config.tree,'state':{'strict':config.strict}}, fp)
 
     @classmethod
     def readfrom(cls, configClass:Config, fpath:Path=None) -> Config:
@@ -67,16 +75,16 @@ class ConfigIO:
         with open(fpath,'r') as fp:
 
             # read tree from disk
-            tree = load(fp, Loader)
+            loaded = load(fp, Loader)
 
         # Initialse config object and set tree
-        obj = configClass()
-        obj.settree(tree)
+        obj = configClass(strict=loaded['state']['strict'])
+        obj.settree(loaded['tree'])
 
         # return initialised Config object
         return obj
 
-class ConfigRepr:
+class ConfigFormatter:
     @staticmethod
     def __repr__(config: Config):
            
@@ -163,7 +171,7 @@ class Config:
                 raise NameError
 
             # else warn used and do Nothing
-            warnings.warn(f'{alias} is a banned name. Please provide a different name', UserWarning)
+            warnings.warn(f'{alias} is a banned name. Please provide a different name', UserWarning, stacklevel=WARNING_STACK_LVL)
             return None
 
         # catch already registerd
@@ -176,7 +184,7 @@ class Config:
                     raise AliasUnavailableError
                 
                 # otherwise warn user and do nothing
-                warnings.warn(f'{alias} is already registered, if you mean to overwrite the path please provide overwrite=True to the function call.', UserWarning)
+                warnings.warn(f'{alias} is already registered, if you mean to overwrite the path please provide overwrite=True to the function call.', UserWarning, stacklevel=WARNING_STACK_LVL)
                 return None
 
         # finalise array depending on config type
@@ -209,7 +217,20 @@ class Config:
                 # raise blocking error
                 raise AttributeError(f"Attribute {__name} was not registered in Config object, please make sure to .register the attribute first")
             # else warn user
-            warnings.warn(f"Attribute {__name} was not registered in Config object, please make sure to .register the attribute first", UserWarning)
+            warnings.warn(f"Attribute {__name} was not registered in Config object, please make sure to .register the attribute first", UserWarning, stacklevel=WARNING_STACK_LVL)
+
+    def get(self, name:str, **kwargs:dict):
+        # getter with default value if not registered in config.
+        # will check if name is in self.__dict__ if AttributeError, will check
+        # self._handler._tree if AttributeError again --> return default if defined
+        if not 'default' in kwargs:
+            return self.__getattr__(name)
+        else:
+            with warnings.catch_warnings(action='error'):
+                try:
+                    return self.__getattr__(name)
+                except (AttributeError, UserWarning):
+                    return kwargs.pop('default')
 
     def __add__(self, other:Config) -> Config:
         # + operator is overwritten to merge and prioritise left
@@ -258,7 +279,7 @@ class Config:
 
     # UI #
     def __repr__(self) -> str:
-       return ConfigRepr.__repr__(self)
+       return ConfigFormatter.__repr__(self)
     
     def __eq__(self, other: Config) -> bool:
         return self._handler._tree == other._handler._tree
@@ -273,6 +294,14 @@ class Config:
         # and make sure that the tree conforms to the subclass specific rules
         self.__conform_subclass__()
 
+    def __enter__(self) -> dict:
+        # return tree dict
+        return self.tree
+    
+    def __exit__(self, *args):
+        pass
+        
+    
 
 class FileConfig(Config):
     def __finalise_entry__(self, alias:str, value:Path, **kwargs:dict):
@@ -296,7 +325,7 @@ class FileConfig(Config):
             else:
 
                 # warn user and do nothing
-                warnings.warn(f'directory "{value}", registered as <{alias}>, does not exist on system!', UserWarning)
+                warnings.warn(f'directory "{value}", registered as <{alias}>, does not exist on system!', UserWarning, stacklevel=WARNING_STACK_LVL)
         
         # return alias and value to register
         return alias, value
@@ -305,6 +334,60 @@ class FileConfig(Config):
     def verified(self) -> bool:
         # verify that all registered directories exists on system
         return all([path.exists() for path in self._handler._tree.values() if not self._handler._tree is None])
+
+
+class ArgumentParserWithFallback(ArgumentParser):
+    def __init__(self, fallback:Config|None=None, **kwargs) -> None:
+        # get standard behaviour
+        super().__init__(**kwargs)
+
+        # if fallback config not given, initialise regular argument parser
+        # else assign fallback_config
+        if not fallback is None:
+            self.fallback_config = fallback
+        else:
+            return ArgumentParser(**kwargs)
+        
+        # initialise return product
+        self._parsed_args = dict()
+
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_value, traceback):
+
+        # parse known args
+        self._parsed_args = self.parse_known_args()[0]
+
+        # go into dict
+        for arg, value in self._parsed_args.__dict__.items():
+
+            # if value is None
+            if value is None:
+
+                # try to match config registry
+                # if strict and no match raise error
+                if self.fallback_config.strict:
+                    try:
+                        self.fallback_config.get(arg)
+                    except AttributeError:
+                        raise DefaultNotRegisteredError
+                    
+                # otherwise default to None if no match
+                # and warn user of no match
+                else:
+                    try:
+                        with warnings.catch_warnings(action='error'):
+                            self._parsed_args.__dict__[arg] = self.fallback_config.get(arg)
+                    except UserWarning:
+                        warnings.warn(f'No default argument for <{arg}> in the fallback config: defaulted to None', stacklevel=WARNING_STACK_LVL)
+                        self._parsed_args.__dict__[arg] = None
+                        
+    
+    def parse_args(self) -> Namespace:
+        # return output product
+        return self._parsed_args
+        
 
 
 def UnitTests() -> bool:

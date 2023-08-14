@@ -170,6 +170,39 @@ class ConfigHandler:
             
         # otherwise not banned or registered
         return False
+    
+    def __getattribute__(self, __name: str) -> Any:
+        return super().__getattribute__(__name)
+
+    @classmethod
+    def __getattr__(cls, self: Config | BaseConfig, __name: str) -> BaseConfig | Any:
+        # check if key is in the _tree
+        # searh in child objects
+        def dive_tree(child, __name, level:int=0):
+                #if name is registered in _tree, return
+                if __name in child._tree:
+                    return child._tree[__name]
+                
+                for child in child._tree.values():   
+                    # else,
+                    # if it has a _tree --> then its a config object
+                    if hasattr(child,'_tree'):
+                        # dive 1 level deeper
+                        res = dive_tree(child, __name, level=level+1)
+                        if not res is None:
+                            return res
+    
+        res = dive_tree(self, __name)
+        if not res is None:
+            return res
+        # otherwise
+        # if strict
+        if self._strict:
+            # raise blocking error
+            raise AttributeError(f"Attribute {__name} was not registered in Config object, please make sure to .register the attribute first")
+        # else warn user
+        warnings.warn(f"Attribute {__name} was not registered in Config object, please make sure to .register the attribute first", UserWarning, stacklevel=WARNING_STACK_LVL)
+
                 
     @classmethod
     def registerGroup(cls, obj:dict, alias:str, configClass: Any, *, overwrite:bool=False, strict:bool=False) -> BaseConfig:
@@ -227,7 +260,7 @@ class Config:
         # ask handler to register group
         return self._handler.registerGroup(self._tree, alias, configClass, overwrite=overwrite, strict=self.strict)
     
-    def register(self, alias, value, *, group:str=None, overwrite=False):
+    def register(self, alias, value, *, group:str=None, overwrite=False, **kwargs:dict):
         
         # set default
         if group is None:
@@ -237,16 +270,16 @@ class Config:
         obj = self._tree[group]
       
         # register in corresponding config object
-        obj.register(alias, value, overwrite=overwrite, strict=self.strict)
+        obj.register(alias, value, overwrite=overwrite, strict=self.strict, **kwargs)
     
     def __getattribute__(self, __name: str) -> BaseConfig | Any:
+        # basic search handle by itself
         return super().__getattribute__(__name)
     
     def __getattr__(self, __name) -> BaseConfig | Any:
-        _tree = super().__getattribute__('_tree')
-        if __name in _tree:
-            return _tree[__name]
-
+        # otherwise ask _handler for more advanced search
+        return self._handler.__getattr__(self, __name)
+    
     def __contains__(self, __key):
         return self._tree.__contains__(__key)
     
@@ -305,31 +338,17 @@ class BaseConfig:
         # getter with default value if not registered in config.
         # will check if name is in self.__dict__ if AttributeError, will check
         # self._handler._tree if AttributeError again --> return default if defined
-        with warnings.catch_warnings(action='error'):
-            try:
-                return self.__getattr__(name)
-            except (AttributeError, UserWarning):
-                # not registerd in self so maybe in children?
-                for child in self._tree.values():
-                        # if it has a _tree --> then its a config object
-                        if hasattr(child,'_tree'):
-
-                            # if name is registered in _tree
-                            if name in child._tree:
-
-                                # return value
-                                return child.get(name)
-                            
-            # else if default
-            if 'default' in kwargs:
-                # return 
-                return kwargs.pop('default')
+        self.__getattr__(name)
+        
+        if 'default' in kwargs:
+            # return 
+            return kwargs.pop('default')
+        else:
+            # otherwise if strict throw error else warn user
+            if self._strict:
+                raise AttributeError
             else:
-                # otherwise if strict throw error else warn user
-                if self._strict:
-                    raise AttributeError
-                else:
-                    warnings.warn(f'alias <{name}> not registerd in <{self}> or children theirin', UserWarning, stacklevel=WARNING_STACK_LVL)
+                warnings.warn(f'alias <{name}> not registerd in <{self}> or children theirin', UserWarning, stacklevel=WARNING_STACK_LVL)
 
                                 
 
@@ -338,20 +357,9 @@ class BaseConfig:
         return super().__getattribute__(__name)
     
     def __getattr__(self, __name: str) -> BaseConfig | Any:
-        # check if key is in the _tree
-        if __name in super().__getattribute__('_tree'):
-            # then return
-            return self._tree[__name]
-        
-        # otherwise
-        else:
-            # if strict
-            if self._strict:
-                # raise blocking error
-                raise AttributeError(f"Attribute {__name} was not registered in Config object, please make sure to .register the attribute first")
-            # else warn user
-            warnings.warn(f"Attribute {__name} was not registered in Config object, please make sure to .register the attribute first", UserWarning, stacklevel=WARNING_STACK_LVL)
-
+        # handle advanced search using handler
+        return self._handler.__getattr__(self, __name)
+    
     def __add__(self, other:BaseConfig) -> Config:
         # + operator is overwritten to merge and prioritise left
         # merge trees
@@ -365,7 +373,7 @@ class BaseConfig:
     
     def register(self, alias:str, value:Any, *, overwrite:bool=False, strict:bool=False, **kwargs:dict) -> None:
         # check if alias is valid
-        self._handler.register(self._tree, alias, value, overwrite=overwrite, strict=strict, __finalise_entry__=self.__finalise_entry__)
+        self._handler.register(self._tree, alias, value, overwrite=overwrite, strict=strict, __finalise_entry__=self.__finalise_entry__, **kwargs)
 
     @classmethod
     def _create_(cls, tree:dict, name:str, strict:bool):
@@ -474,7 +482,7 @@ class ArgumentParserWithFallback(ArgumentParser):
                 # if strict and no match raise error
                 if self._fallback_config._strict:
                     try:
-                        self._fallback_config.get(arg)
+                        self._parsed_args.__dict__[arg] = self._fallback_config.__getattr__(arg)
                     except AttributeError:
                         raise DefaultNotRegisteredError
                     
@@ -483,7 +491,7 @@ class ArgumentParserWithFallback(ArgumentParser):
                 else:
                     try:
                         with warnings.catch_warnings(action='error'):
-                            self._parsed_args.__dict__[arg] = self._fallback_config.get(arg)
+                            self._parsed_args.__dict__[arg] = self._fallback_config.__getattr__(arg)
                     except UserWarning:
                         warnings.warn(f'No default argument for <{arg}> in the fallback config: defaulted to None', stacklevel=WARNING_STACK_LVL)
                         self._parsed_args.__dict__[arg] = None

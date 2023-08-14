@@ -191,10 +191,13 @@ class ConfigHandler:
                         res = dive_tree(child, __name, level=level+1)
                         if not res is None:
                             return res
-    
+        # begin elementwise search
         res = dive_tree(self, __name)
+
+        # if a result was found, return
         if not res is None:
             return res
+        
         # otherwise
         # if strict
         if self._strict:

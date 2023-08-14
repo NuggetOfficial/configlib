@@ -4,7 +4,7 @@ from __future__ import annotations
 # buildin
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 import logging
 import warnings
 
@@ -108,7 +108,7 @@ class ConfigFormatter:
             # recursive tree generator
             for level, (child, value) in enumerate(zip(children, values)):
                 last = level == len(children)-1
-                printable.append(header + (elbow if last else tee) + str(value)+": "+str(child))
+                printable.append(header + (elbow if last else tee) + (str(value)+": "+repr(child))*(repr(child)!=value) + (str(value)+':')*(repr(child)==value))
                 if hasattr(child,'_tree'):
                     get_tree(child, level=level, header = header + (blank if last else pipe))
 
@@ -152,8 +152,8 @@ class ConfigHandler:
                 raise NameError
 
             # else warn used and do Nothing
-            warnings.warn(f'{alias} is a banned name. Please provide a different name', UserWarning, stacklevel=WARNING_STACK_LVL)
-            return None
+            warnings.warn(f'{alias} is a banned name. Please provide a different name. Field was not registered!!', UserWarning, stacklevel=WARNING_STACK_LVL)
+            return True
         
         # catch already registerd
         if alias in obj:
@@ -166,7 +166,10 @@ class ConfigHandler:
                 
                 # otherwise warn user and do nothing
                 warnings.warn(f'{alias} is already registered, if you mean to overwrite the path please provide overwrite=True to the function call.', UserWarning, stacklevel=WARNING_STACK_LVL)
-                return None
+                return True
+            
+        # otherwise not banned or registered
+        return False
                 
     @classmethod
     def registerGroup(cls, obj:dict, alias:str, configClass: Any, *, overwrite:bool=False, strict:bool=False) -> BaseConfig:
@@ -180,6 +183,21 @@ class ConfigHandler:
         logging.info(f'added group of type <{configClass}> under alias {alias} to config')
     
         return obj[alias]
+
+    @classmethod
+    def register(cls, obj:dict, alias:str, value:Any, *, overwrite:bool=False, strict:bool=False, __finalise_entry__:Callable=lambda x,y: (x,y), **kwargs:dict):
+        # check if alias is valid
+        if not cls._is_banned_or_registered(obj, alias, overwrite=overwrite, strict=strict):
+
+            # finalise array depending on config type
+            alias, value = __finalise_entry__(alias, value, **kwargs)
+
+            # add as property dynamically: this is dangerous!
+            # --> Make sure all <self> altering edge cases are caught before this line
+            obj[alias] = value
+            logging.info(f'added directory {value} under alias {alias} to config')
+
+
 
 class Config:
     'Config object that allows you to register variables and IO them to disk uisng the YAML standard.'
@@ -287,14 +305,33 @@ class BaseConfig:
         # getter with default value if not registered in config.
         # will check if name is in self.__dict__ if AttributeError, will check
         # self._handler._tree if AttributeError again --> return default if defined
-        if not 'default' in kwargs:
-            return self.__getattr__(name)
-        else:
-            with warnings.catch_warnings(action='error'):
-                try:
-                    return self.__getattr__(name)
-                except (AttributeError, UserWarning):
-                    return kwargs.pop('default')
+        with warnings.catch_warnings(action='error'):
+            try:
+                return self.__getattr__(name)
+            except (AttributeError, UserWarning):
+                # not registerd in self so maybe in children?
+                for child in self._tree.values():
+                        # if it has a _tree --> then its a config object
+                        if hasattr(child,'_tree'):
+
+                            # if name is registered in _tree
+                            if name in child._tree:
+
+                                # return value
+                                return child.get(name)
+                            
+            # else if default
+            if 'default' in kwargs:
+                # return 
+                return kwargs.pop('default')
+            else:
+                # otherwise if strict throw error else warn user
+                if self._strict:
+                    raise AttributeError
+                else:
+                    warnings.warn(f'alias <{name}> not registerd in <{self}> or children theirin', UserWarning, stacklevel=WARNING_STACK_LVL)
+
+                                
 
     def __getattribute__(self, __name: str) -> BaseConfig | Any:
         # callback hook for every dot search
@@ -321,25 +358,6 @@ class BaseConfig:
         newtree = self._tree | other._tree
         # return new cfg
         return other._create_(newtree, name=other._name, strict=False)
-    
-    def __truediv__(self, other: Config):
-        # / operator is overwritten to merge and prioritise right
-        # merge trees
-        newtree = other._handler | self._handler
-        # return new cfg
-        return self._create_(newtree, strict=False)
-    
-    def __floordiv__(self, other: Config):
-        # // operator is overwritten to merge and always go to base class
-        # merge trees
-        newtree = other._handler | self._handler
-
-        # create object as in self._create_ but we want to force the Config baseclass
-        cfg = Config(strict=False)
-        cfg.settree(newtree)
-
-        # return new cfg
-        return cfg
 
     def registerGroup(self, alias:str, configClass:Any, *, overwrite:bool=False, strict:bool=False):
         # ask handler to register group
@@ -347,15 +365,7 @@ class BaseConfig:
     
     def register(self, alias:str, value:Any, *, overwrite:bool=False, strict:bool=False, **kwargs:dict) -> None:
         # check if alias is valid
-        self._handler._is_banned_or_registered(self._tree, alias, overwrite=overwrite, strict=strict)
-
-        # finalise array depending on config type
-        alias, value = self.__finalise_entry__(alias, value, **kwargs)
-
-        # add as property dynamically: this is dangerous!
-        # --> Make sure all <self> altering edge cases are caught before this line
-        self._tree[alias] = value
-        logging.info(f'added directory {value} under alias {alias} to config')
+        self._handler.register(self._tree, alias, value, overwrite=overwrite, strict=strict, __finalise_entry__=self.__finalise_entry__)
 
     @classmethod
     def _create_(cls, tree:dict, name:str, strict:bool):
@@ -374,10 +384,11 @@ class BaseConfig:
         return self._tree == other._tree
     
     def __repr__(self) -> str:
-        return ConfigFormatter.format(self)
+        return self._name
+        
     
     def __str__(self) -> str:
-        return self._name
+       return ConfigFormatter.format(self)
     
     def verified(self) -> bool:
         return False

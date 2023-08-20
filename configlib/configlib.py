@@ -208,7 +208,7 @@ class ConfigHandler:
 
                 
     @classmethod
-    def registerGroup(cls, obj:dict, alias:str, configClass: Any, *, overwrite:bool=False, strict:bool=False) -> BaseConfig:
+    def add_group(cls, obj:dict, alias:str, configClass: Any, *, overwrite:bool=False, strict:bool=False) -> BaseConfig:
 
         # check if alias is valid
         cls._is_banned_or_registered(obj, alias, overwrite, strict)
@@ -221,7 +221,7 @@ class ConfigHandler:
         return obj[alias]
 
     @classmethod
-    def register(cls, obj:dict, alias:str, value:Any, *, overwrite:bool=False, strict:bool=False, __finalise_entry__:Callable=lambda x,y: (x,y), **kwargs:dict):
+    def add_parameter(cls, obj:dict, alias:str, value:Any, *, overwrite:bool=False, strict:bool=False, __finalise_entry__:Callable=lambda x,y: (x,y), **kwargs:dict):
         # check if alias is valid
         if not cls._is_banned_or_registered(obj, alias, overwrite=overwrite, strict=strict):
 
@@ -249,7 +249,7 @@ class Config:
         self._strict  = strict
 
         # register the base name into the config object
-        self.registerGroup(name, BaseConfig)
+        self.add_group(name, BaseConfig)
 
     @property
     def strict(self):
@@ -259,11 +259,11 @@ class Config:
     def settree(self, _tree)-> None:
         self._tree.update(_tree)
 
-    def registerGroup(self, alias:str, configClass:Any, *, overwrite:bool=False):
+    def add_group(self, alias:str, configClass:Any, *, overwrite:bool=False):
         # ask handler to register group
-        return self._handler.registerGroup(self._tree, alias, configClass, overwrite=overwrite, strict=self.strict)
+        return self._handler.add_group(self._tree, alias, configClass, overwrite=overwrite, strict=self.strict)
     
-    def register(self, alias, value, *, group:str=None, overwrite=False, **kwargs:dict):
+    def add_parameter(self, alias, value, *, group:str=None, overwrite=False, **kwargs:dict):
         
         # set default
         if group is None:
@@ -273,7 +273,7 @@ class Config:
         obj = self._tree[group]
       
         # register in corresponding config object
-        obj.register(alias, value, overwrite=overwrite, strict=self.strict, **kwargs)
+        obj.add_parameter(alias, value, overwrite=overwrite, strict=self.strict, **kwargs)
     
     def __getattribute__(self, __name: str) -> BaseConfig | Any:
         # basic search handle by itself
@@ -302,6 +302,10 @@ class Config:
     
     def __repr__(self):
         return ConfigFormatter.__repr__(self)
+    
+    def __iter__(self):
+        for child in self._tree.values():
+            yield child 
     
     def verified(self):
         return False
@@ -369,20 +373,25 @@ class BaseConfig:
         newtree = self._tree | other._tree
         # return new cfg
         return other._create_(newtree, name=other._name, strict=False)
-
-    def registerGroup(self, alias:str, configClass:Any, *, overwrite:bool=False, strict:bool=False):
-        # ask handler to register group
-        return self._handler.registerGroup(self._tree, alias, configClass, overwrite=overwrite, strict=strict)
     
-    def register(self, alias:str, value:Any, *, overwrite:bool=False, strict:bool=False, **kwargs:dict) -> None:
+    def __iter__(self):
+        for child in self._tree.values():
+            yield child
+
+
+    def add_group(self, alias:str, configClass:Any, *, overwrite:bool=False, strict:bool=False):
+        # ask handler to register group
+        return self._handler.add_group(self._tree, alias, configClass, overwrite=overwrite, strict=strict)
+    
+    def add_parameter(self, alias:str, value:Any, *, overwrite:bool=False, strict:bool=False, **kwargs:dict) -> None:
         # check if alias is valid
-        self._handler.register(self._tree, alias, value, overwrite=overwrite, strict=strict, __finalise_entry__=self.__finalise_entry__, **kwargs)
+        self._handler.add_parameter(self._tree, alias, value, overwrite=overwrite, strict=strict, __finalise_entry__=self.__finalise_entry__, **kwargs)
 
     @classmethod
     def _create_(cls, tree:dict, name:str, strict:bool):
         # helper function for __dunder__ operation overwrites
         cfg = cls(name=name, strict=strict)
-        cfg.settree(tree)
+        cfg.set_tree(tree)
 
         # return new object with intialised tree
         return cfg
@@ -404,7 +413,7 @@ class BaseConfig:
     def verified(self) -> bool:
         return False
     
-    def settree(self, tree:dict) -> None:
+    def set_tree(self, tree:dict) -> None:
         # set tree in handler directly
         self._tree.update(tree)
 
@@ -451,6 +460,18 @@ class FileConfig(BaseConfig):
         # verify that all registered directories exists on system
         return all([path.exists() for path in self._tree.values() if not self._tree is None])
 
+class ModelConfig(BaseConfig):
+    def __finalise_entry__(self, alias: str, value: Any, **kwargs: dict):
+
+        # from value create a baseconfig
+        model = BaseConfig(name=alias, strict=False)
+
+        # set the tree to the __dict__ of value
+        # intended use is with a @dataclass defining the model parameters
+        model.set_tree(value.__dict__)
+
+        # return alias and value to register
+        return alias, model
 
 class ArgumentParserWithFallback(ArgumentParser):
     def __init__(self, fallback:Config|None=None, **kwargs) -> None:
@@ -464,7 +485,7 @@ class ArgumentParserWithFallback(ArgumentParser):
         else:
             return ArgumentParser(**kwargs)
         
-        # initialise return product
+        # initialise return product 
         self._parsed_args = dict()
 
     def __enter__(self):
@@ -501,6 +522,13 @@ class ArgumentParserWithFallback(ArgumentParser):
                         
     
     def parse_args(self) -> Namespace:
+        # is _parsed_args is empty:
+        # means if with context manager was not used
+        # then force the context manager exit which loads
+        # the parsed args.
+        if self._parsed_args == {}:
+            # parse arguments
+            self.__exit__('forced', 102, None)
         # return output product
         return self._parsed_args
         
@@ -510,16 +538,16 @@ def UnitTests() -> bool:
 
     # create config and register
     cfg = Config()
-    cfg.register('mystring','hello world')
-    cfg.register('mybool', False)
-    cfg.register('myint', 1)
-    cfg.register('myfloat', 1.)
-    cfg.register('mylist', list([1.,2.]))
-    cfg.register('mydict', {'a':1, 'b':2})
+    cfg.add_parameter('mystring','hello world')
+    cfg.add_parameter('mybool', False)
+    cfg.add_parameter('myint', 1)
+    cfg.add_parameter('myfloat', 1.)
+    cfg.add_parameter('mylist', list([1.,2.]))
+    cfg.add_parameter('mydict', {'a':1, 'b':2})
 
     # other cfg
     other_cfg = Config()
-    other_cfg.register('myfloat', 5.)
+    other_cfg.add_parameter('myfloat', 5.)
 
     # test operations
     res = cfg + other_cfg
@@ -566,13 +594,13 @@ def UnitTests() -> bool:
     # test errors
     cfg = Config(strict=True)
     try: 
-        cfg.register('tree', 'tree')
+        cfg.add_parameter('tree', 'tree')
         return False
     except NameError:
         pass
-    cfg.register('myfloat', 5.)
+    cfg.add_parameter('myfloat', 5.)
     try:
-        cfg.register('myfloat', 1.)
+        cfg.add_parameter('myfloat', 1.)
         return False
     except AliasUnavailableError:
         pass
@@ -584,12 +612,12 @@ def UnitTests() -> bool:
     del cfg
     cfg = FileConfig(strict=True)
     try:
-        cfg.register('source', 'my/path/source')
+        cfg.add_parameter('source', 'my/path/source')
         return False
     except FileNotFoundError:
         pass
     try:
-        cfg.register('test',Path.cwd()/'configlib_unittest', forcecreate=True)
+        cfg.add_parameter('test',Path.cwd()/'configlib_unittest', forcecreate=True)
     except FileNotFoundError:
         return False
     if not cfg.verified():
@@ -601,7 +629,7 @@ def UnitTests() -> bool:
     cfg = FileConfig()
     with warnings.catch_warnings(category=UserWarning, append=True, action='error') as w:
         try:
-            cfg.register('source', 'my/path/source')
+            cfg.add_parameter('source', 'my/path/source')
             return False
         except UserWarning:
             pass

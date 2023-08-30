@@ -7,7 +7,7 @@ setup(
     description='package to neetly organise your global config parameters',
     author='Tom van der Wielen',
     author_email='vdwielen@strw.leidenuniv.nl',
-    version='0.0.1a0',
+    version='1.0.0b0',
     url='https://github.com/NuggetOfficial/configlib',
     install_requires=['PyYAML>=6.0.1'],
     python_requires='>=3.11.0',
@@ -15,8 +15,7 @@ setup(
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Developers',
-        'Programming Language :: Python :: 3.11'
-        'Lisence :: OSI Approved :: GNU GENERAL PUBLIC LICENCE V#',
+        'Programming Language :: Python :: 3.11',
     ],
     keywords='configuration project'
 )

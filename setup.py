@@ -10,7 +10,7 @@ setup(
     version='1.0.0b0',
     url='https://github.com/NuggetOfficial/configlib',
     install_requires=['PyYAML>=6.0.1'],
-    python_requires='>=3.11.0',
+    python_requires='>=3.10.0',
     license='gpl-3.0',
     classifiers=[
         'Development Status :: 3 - Alpha',

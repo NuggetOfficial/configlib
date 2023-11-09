@@ -249,11 +249,14 @@ class Config:
 
         # set content manager and content fields
         self._handler = ConfigHandler
+        self._handler._initialised = True
         self._tree = dict()
         self._strict  = strict
 
         # register the base name into the config object
         self.add_group(name, BaseConfig)
+
+    
 
     @property
     def strict(self):

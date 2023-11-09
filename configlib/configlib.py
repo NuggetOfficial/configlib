@@ -512,7 +512,7 @@ class ArgumentParserWithFallback(ArgumentParser):
                     try:
                         self._parsed_args.__dict__[arg] = self._fallback_config.__getattr__(arg)
                     except AttributeError:
-                        raise DefaultNotRegisteredError
+                        raise DefaultNotRegisteredError(arg)
                     
                 # otherwise default to None if no match
                 # and warn user of no match

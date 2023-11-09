@@ -82,6 +82,7 @@ class ConfigIO:
         state = loaded.get('general')
         obj = configClass(name=state._name, strict=state._strict)
         obj.settree(loaded)
+        obj._handler._initialised=True
 
         # return initialised Config object
         return obj
@@ -126,7 +127,7 @@ class ConfigFormatter:
 
 
 class ConfigHandler:
-
+    _initialised = False
     _banned: list[str] = ['register', 'writeto', 'readfrom', 'tree', 'banned', 'strict','verified'] 
     
     @staticmethod
@@ -178,6 +179,9 @@ class ConfigHandler:
     def __getattr__(cls, self: Config | BaseConfig, __name: str) -> BaseConfig | Any:
         # check if key is in the _tree
         # searh in child objects
+        if not cls._initialised:
+            return super().__getattr__(self, __name)
+        
         def dive_tree(child, __name, level:int=0):
                 #if name is registered in _tree, return
                 if __name in child._tree:

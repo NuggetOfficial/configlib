@@ -127,9 +127,12 @@ class ConfigFormatter:
 
 
 class ConfigHandler:
-    _initialised = False
     _banned: list[str] = ['register', 'writeto', 'readfrom', 'tree', 'banned', 'strict','verified'] 
     
+    def __init__(self):
+        # set initialisation flag
+        self._initialised = False
+
     @staticmethod
     def _isdunder(alias:str) -> bool:
         return alias[:2] =='__' or alias[-2:] == '__'
@@ -175,12 +178,15 @@ class ConfigHandler:
     def __getattribute__(self, __name: str) -> Any:
         return super().__getattribute__(__name)
 
-    @classmethod
-    def __getattr__(cls, self: Config | BaseConfig, __name: str) -> BaseConfig | Any:
+    
+    def __getattr__(self, obj: Config | BaseConfig, __name: str) -> BaseConfig | Any:
         # check if key is in the _tree
         # searh in child objects
-        if not cls._initialised:
-            return super().__getattr__(self, __name)
+        if not self._initialised:
+            # if object is not initialised then we need still need to dot search, in this case we will use
+            # the _tree should contain all info neccesary
+            _tree = object.__getattribute__(obj,'_tree')
+            return dict.__getitem__(_tree,__name)
         
         def dive_tree(child, __name, level:int=0):
                 #if name is registered in _tree, return
@@ -196,7 +202,7 @@ class ConfigHandler:
                         if not res is None:
                             return res
         # begin elementwise search
-        res = dive_tree(self, __name)
+        res = dive_tree(obj, __name)
 
         # if a result was found, return
         if not res is None:
@@ -204,7 +210,7 @@ class ConfigHandler:
         
         # otherwise
         # if strict
-        if self._strict:
+        if obj._strict:
             # raise blocking error
             raise AttributeError(f"Attribute {__name} was not registered in Config object, please make sure to .register the attribute first")
         # else warn user
@@ -248,7 +254,7 @@ class Config:
         self._name = name
 
         # set content manager and content fields
-        self._handler = ConfigHandler
+        self._handler = ConfigHandler()
         self._handler._initialised = True
         self._tree = dict()
         self._strict  = strict
@@ -320,7 +326,7 @@ class Config:
 class BaseConfig:
 
     # set handler class
-    _handler = ConfigHandler
+    _handler = ConfigHandler()
 
     def __init__(self, name:str, strict:bool):  
 

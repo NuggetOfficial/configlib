@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(
-    name='configlib_tw',
+    name='configlib',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     description='package to neetly organise your global config parameters',

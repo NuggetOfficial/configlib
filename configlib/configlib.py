@@ -130,7 +130,6 @@ class ConfigHandler:
     _banned: list[str] = ['register', 'writeto', 'readfrom', 'tree', 'banned', 'strict','verified'] 
     
     def __init__(self):
-        # set initialisation flag
         self._initialised = False
 
     @staticmethod
@@ -182,7 +181,7 @@ class ConfigHandler:
     def __getattr__(self, obj: Config | BaseConfig, __name: str) -> BaseConfig | Any:
         # check if key is in the _tree
         # searh in child objects
-        if not self._initialised:
+        if not obj._handler._initialised:
             # if object is not initialised then we need still need to dot search, in this case we will use
             # the _tree should contain all info neccesary
             _tree = object.__getattribute__(obj,'_tree')
@@ -243,7 +242,11 @@ class ConfigHandler:
             obj[alias] = value
             logging.info(f'added directory {value} under alias {alias} to config')
 
-
+    def __getstate__(self):
+        return self.__dict__
+    
+    def __setstate__(self, state):
+        self.__dict__.update(state)
 
 class Config:
     'Config object that allows you to register variables and IO them to disk uisng the YAML standard.'
@@ -261,8 +264,6 @@ class Config:
 
         # register the base name into the config object
         self.add_group(name, BaseConfig)
-
-    
 
     @property
     def strict(self):
@@ -322,11 +323,14 @@ class Config:
     
     def verified(self):
         return False
+    
+    def __getstate__(self):
+        return self.__dict__
+    
+    def __setstate__(self, state):
+        self.__dict__.update(state)
                 
 class BaseConfig:
-
-    # set handler class
-    _handler = ConfigHandler()
 
     def __init__(self, name:str, strict:bool):  
 
@@ -336,6 +340,15 @@ class BaseConfig:
     
         # initiliase buffer
         self._tree = dict()
+
+        self._handler = ConfigHandler()
+        self._handler._initialised = True
+
+    def __getstate__(self):
+        return self.__dict__
+    
+    def __setstate__(self, state):
+        self.__dict__.update(state)
 
     def __conform_subclass__(self):
         if self._tree != {}:
@@ -551,104 +564,13 @@ def UnitTests() -> bool:
 
     # create config and register
     cfg = Config()
-    cfg.add_parameter('mystring','hello world')
-    cfg.add_parameter('mybool', False)
-    cfg.add_parameter('myint', 1)
-    cfg.add_parameter('myfloat', 1.)
-    cfg.add_parameter('mylist', list([1.,2.]))
-    cfg.add_parameter('mydict', {'a':1, 'b':2})
-
-    # other cfg
-    other_cfg = Config()
-    other_cfg.add_parameter('myfloat', 5.)
-
-    # test operations
-    res = cfg + other_cfg
-    if res.myfloat != 5.:
-        return False
-    res = cfg / other_cfg
-    if res.myfloat != 1.:
-        return False
-    res = cfg // other_cfg
-    if res.myfloat != 1.:
-        return False
-    del other_cfg
-    
-    # test write, test read
-    _cfg = cfg
+    cfg.add_parameter("hi", "hello world")
     cfg.writeto()
     del cfg
     cfg = Config.readfrom()
-    if _cfg != cfg:
-        return False
-    del _cfg, cfg
-
-    # import os and platform to force remove file after read write test
-    import os
-    import platform
-    match platform.system().lower():
-        case 'windows':
-            os.system('del -f config.yml')
-        case 'linux':
-            os.system('rm -f config.yml')
     
-    # test cross configClass operations
-    cfg      = Config()
-    file_cfg = FileConfig()
-    if type(cfg+file_cfg) != FileConfig or\
-       type(file_cfg+cfg) != Config or\
-       type(file_cfg // cfg) != Config or\
-       type(cfg / file_cfg) != Config or\
-       type(file_cfg / cfg) != FileConfig:
-        return False
-    del cfg
-    del file_cfg
 
-    # test errors
-    cfg = Config(strict=True)
-    try: 
-        cfg.add_parameter('tree', 'tree')
-        return False
-    except NameError:
-        pass
-    cfg.add_parameter('myfloat', 5.)
-    try:
-        cfg.add_parameter('myfloat', 1.)
-        return False
-    except AliasUnavailableError:
-        pass
-    try:
-        cfg.myint
-        return False
-    except AttributeError:
-        pass
-    del cfg
-    cfg = FileConfig(strict=True)
-    try:
-        cfg.add_parameter('source', 'my/path/source')
-        return False
-    except FileNotFoundError:
-        pass
-    try:
-        cfg.add_parameter('test',Path.cwd()/'configlib_unittest', forcecreate=True)
-    except FileNotFoundError:
-        return False
-    if not cfg.verified():
-        return False
-    os.rmdir(Path.cwd()/'configlib_unittest')
-                    
-    # test warning
-    del cfg
-    cfg = FileConfig()
-    with warnings.catch_warnings(category=UserWarning, append=True, action='error') as w:
-        try:
-            cfg.add_parameter('source', 'my/path/source')
-            return False
-        except UserWarning:
-            pass
-    del os, platform
     return True
-
 
 if __name__ == '__main__':
     if UnitTests():

@@ -1,33 +1,43 @@
 # configlib
-Python3 library for registering configurations. Current intended use case is handling directory strings.
-I wish to improve the repr and verification such that both are its own class. This way the user can create their own verification schemes and printables.
+Python3 library for registering hierarchical configuration files. In astronomical programming people love to have a bunch of
+hard coded constants in their files. This package aims to encourage people to put all those parameter defintions
+in a configuration file instead. For now the only supported format is `.yaml` but I aim to add other formats such as `.toml` in
+the future.
 
-The current intenstion behind the package is that a single import will handle your entire file structure. This way each part of the code knows the same directories by the
-same names. This makes large data reduction scrips easier to setup and will it easier to make your project portable, both in system and also across systems.
+## Installation
+This package is not (yet) available on PyPI. As such, in order to install the package you need to git clone or
+git fork the repo:
+```bash
+# using https
+git clone https://github.com/NuggetOfficial/configlib.git
+
+# or ssh
+git clone git@github.com:NuggetOfficial/configlib.git
+```
+and then pip install it from the local repo directory
+```bash
+pip install ./your/repo/directory
+```
 
 ## Documentation
 ### Getting started:
-To start we add a simple import line to our majestic python file.
+To start we add a simple import line to our majestic python file and initializing our workhorse object
 ```python
 from configlib import Config
-```
-Then we can use the register method to register variables under various aliases.
-```python
-# initialse a config obect
-cfg = Config()
 
-# add directories to project config
-cfg.register('source','my/path/source')
-cfg.register('data','my/path/data')
-cfg.register('skiprows',1)
+cfg = Config()
 ```
+Much like the beloved `hdf5` format and `argparse` there are two primary operations on this object.
+We either make a `group` or a `parameter`. 
+```
+my_group = cfg.add_group('my_group')
+my_group.add_parameter('my_str', 'Hello world')
+```
+
 These object can then be called as properties as follows:
 ```python
-# define some data loading function
-def my_data_load_funntion(fromdir, skiprows=0): ...
-
-# call using the earlier created config object
-my_data_load_function(fromdir=cfg.data, skiprows=cfg.skiprows)
+#outputs Hello world to stdout
+print(cfg.my_str)
 ```
 These objects can be saved to and read from disk using the YAML standard. This is done through an `ConfigIO` object. The `writeto` and `readfrom` methods of this object
 are handed to the `Config` object using a composition strategy. This allows us to use the object as follows.
@@ -52,23 +62,34 @@ ConfigIO.readfrom(Config, fpath='your_file')
 ```
 Although I have no particular use case intended for this. Im sure some of you will find it useful.
 ### More advanced:
-In the offshoot that you have to not only load data that require some globals but you're also interested in output directories, intermediate directories, data reduction parameters, etc. etc... You might be better of creating several config objects each with their own purpose.
+In the offshoot that you have to not only load data that require some globals but you're also interested in output directories, intermediate directories, data reduction parameters, etc. etc... You might be better of creating several config groups each with their own purpose.
 ```python
 from configlib import Config, FileConfig
+cfg = Config()
 
 # create config object for handling directories and files
-filecfg = FileConfig()
-cfg.register('source','my/path/source')
-cfg.register('data','my/path/data')
+file_cfg = cfg.add_group('files', FileConfig)
+file_cfg.add_parameter('source','my/path/to/source')
+file_cfg.add_parameter('data','my/path/to/data')
 
 # create config object for some fitting algorithm
-fitcfg = Config()
-fitcfg.register('order', 5)          # 5th order polynomial
-fitcfg.register('method', 'leastsq') # using leastsquares method
-fitcfg.register('burnin', 50)        # and throw the first 50 samples away
+fit_cfg = cfg.add_group('fitting')
+fit_cfg.add_parameter('method', 'leastsq')  # using leastsquares method
+
+# function specific config
+function_cfg = cfg.add_group('function')
+function_cfg.add_parameter('order', 2)    # e.g 2nd order polynomial
+function_cfg.add_parameter('c', 0.3)      # and c is known
 ```
-Should you want to, these config object can be merged into one config objects. To do so, we can use the `+`, `/` and `//` operations.
-The `+` operation will add and overwrite the object on the rightside of the `+` onto the left. This also means that the final class of the
-config object will be the class of the left right object
-The `/` operation will add the object but will prioritise the class and attributes of the object on the left.
-Finally, the `//` operation will add the object whilst it prioritises the left object but it will always cast the type to be the basic `Config` class.
+The parameters in these groups can either be accessed directly trough the `Config` object.
+```python
+order  = cfg.order     # initializes as 2
+method = cfg.method    # initializes as 'leastsq'
+```
+or they can be access by going down the tree manually
+```python
+assert cfg.fitting.function.order == cfg.order  # --> passes assertion
+```
+parameter names do not have to be unique so this implies that the dot search returns the first
+instance of a parameter name that it finds.
+
